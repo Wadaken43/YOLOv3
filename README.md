@@ -1,3 +1,2 @@
 # YOLOv3
-YOLOv3のモデルをPytorchを使用して構築してみた
-comment文だらけのプログラム
+YOLOv3 model built using Pytorch.
