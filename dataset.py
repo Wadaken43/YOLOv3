@@ -20,13 +20,14 @@ class YOLOv3_Dataset(Dataset):
     super().__init__()
     self.img_list = img_list
     self.label_list = label_list
-    self.anchor_dict = anchor_dict
+    self.anchor_dict = anchor_dict #create_anchorで出力したanchorのデータ
     self.class_n = class_n
     self.img_size = img_size
     self.transform = transform
+    #anchor_boxを2次元tensorに落とし込んだもの
     self.anchor_iou = torch.cat([torch.zeros(9,2) , torch.tensor(self.anchor_dict[["width","height"]].values)] ,dim = 1)
 
-#ラベルを読み出す
+#coco128からラベルを読み出す
   def get_label(self , path): 
     bbox_list = []
     with open(path , 'r',newline='\n') as f:  
@@ -35,31 +36,41 @@ class YOLOv3_Dataset(Dataset):
         bbox_list.append(bbox)
     return bbox_list
 
-  #幅と高さをTw,Thに変換する関数  
-  def wh2twth(self, wh):
+###YOLOv3の予測方法
+  #(YOLOv3の予測tw,th 微調整用)
+  #Anchorboxをtw,thを用いて微調整することで物体を予測する。
+  #直接物体の幅や高さを予測するのではなく、AnchorBoxの微調整を学習する。
+  def wh2twth(self, wh): #whはデータセットの物体の幅と高さ
     twth = []
     for i in range(9):
       anchor = self.anchor_dict.iloc[i]
-      aw = anchor["width"]
+      aw = anchor["width"] #aw,ahはアンカーボックスのサイズ
       ah = anchor["height"]
       twth.append([math.log(wh[0]/aw) , math.log(wh[1]/ah)])
+      #print(twth)
     return twth
 
-  # 中心座標をCx,Cy,tx,tyに変換する関数
+  # 中心座標をCx,Cy,tx,tyに変換する関数(YOLOv3の予測tx,ty)
   def cxcy2txty(self,cxcy):
-    map_size = [int(self.img_size/32) , int(self.img_size/16) , int(self.img_size/8)]
+    #全ての出力サイズに対して計算している。特定のサイズのみで十分
+    map_size = [int(self.img_size/32) , int(self.img_size/16) , int(self.img_size/8)] #why(32,16,8)
     txty = []
     for size in map_size:
-      grid_x = int(cxcy[0]*size)
+      #grid_x,grid_y:bboxの中心座標(0~1)*それぞれの出力サイズ=それぞれの出力サイズにおける1ピクセルの幅Cx,Cy
+      grid_x = int(cxcy[0]*size) ###int
       grid_y = int(cxcy[1]*size)
       
+      #
       tx = math.log((cxcy[0]*size - grid_x + 1e-10) / (1 - cxcy[0]*size +grid_x+ 1e-10))
       ty = math.log((cxcy[1]*size - grid_y+ 1e-10) / (1 - cxcy[1]*size + grid_y+ 1e-10))
       txty.append([grid_x , tx , grid_y ,ty])
+      #print(txty)
     return txty
 
+
+
   #ラベルをテンソルに変換する関数
-  def label2tensor(self , bbox_list):
+  def label2tensor(self , bbox_list):  
     map_size = [int(self.img_size/32) , int(self.img_size/16) , int(self.img_size/8)]
     tensor_list = []
 
@@ -67,10 +78,11 @@ class YOLOv3_Dataset(Dataset):
       for x in range(3):
         tensor_list.append(torch.zeros((4 + 1 + self.class_n,size,size)))
     
-    for bbox in bbox_list:
+    ##yolov4の予測結果をリストに格納
+    for bbox in bbox_list: #
       cls_n = int(bbox[0])
-      txty_list = self.cxcy2txty(bbox[1:3])
-      twth_list = self.wh2twth(bbox[3:])
+      txty_list = self.cxcy2txty(bbox[1:3]) #bboxの中心座標
+      twth_list = self.wh2twth(bbox[3:]) #bboxの幅と高さ
       
       #バウンディングボックスと最も形状が近いAnchorBoxはIoUを用いて計算する。
       label_iou = torch.cat([torch.zeros((1,2))  , torch.tensor(bbox[3:]).unsqueeze(0)],dim=1)
@@ -80,7 +92,7 @@ class YOLOv3_Dataset(Dataset):
       for i , twth in enumerate(twth_list):
         tensor = tensor_list[i]
         txty = txty_list[int(i/3)]
-       
+
         if i == obj_idx:
           
           tensor[0,txty[2],txty[0]] = txty[1]
@@ -96,14 +108,14 @@ class YOLOv3_Dataset(Dataset):
     scale1_label = torch.cat(tensor_list[6:] , dim = 0)
 
     return scale3_label , scale2_label , scale1_label  
-     
+
   #__getitem__メソッド：指定されたインデックスに対応するデータとラベルを返すためのメソッド
   def __getitem__(self , idx):
     img_path = self.img_list[idx]
     
     label_path = self.label_list[idx]
     
-    bbox_list = self.get_label(label_path)
+    bbox_list = self.get_label(label_path) #coco128データセットの中のlabels
     img = cv2.imread(img_path)
     img = cv2.resize(img , (self.img_size , self.img_size))
     img = Image.fromarray(img)
@@ -119,9 +131,9 @@ class YOLOv3_Dataset(Dataset):
 ###データセットの確認
 import numpy as np
 
-def visualization(y_pred,create_anchor.anchor,img_size,conf = 0.5,is_label = False):
+def visualization(y_pred,anchor,img_size,conf = 0.5,is_label = False):
   size = y_pred.shape[2]
-  anchor_size = create_anchor.anchor[create_anchor.anchor["type"] == size]
+  anchor_size = anchor[anchor["type"] == size]
   bbox_list = []
   for i in range(3):
     a = anchor_size.iloc[i]
@@ -141,7 +153,7 @@ def visualization(y_pred,create_anchor.anchor,img_size,conf = 0.5,is_label = Fal
       xmin,ymin,xmax,ymax = cx - width/2 , cy - height/2 ,cx + width/2 , cy + height/2
       bbox_list.append([xmin,ymin,xmax,ymax])
   return bbox_list
- 
+
 import torchvision.transforms.functional as FF
 def show(imgs):
     if not isinstance(imgs, list):
@@ -153,10 +165,12 @@ def show(imgs):
         axs[0, i].imshow(np.asarray(img))
         axs[0, i].set(xticklabels=[], yticklabels=[], xticks=[], yticks=[])
 
+
+#メイン
 from torchvision.io import read_image
 from torchvision.utils import draw_bounding_boxes
 import matplotlib.pyplot as plt
-img_list = glob.glob(os.path.join("/home/wada/YOLOv3/coco128/images/train2017","*"))
+#img_list = glob.glob(os.path.join("/home/wada/YOLOv3/coco128/images/train2017","*"))
 img_size = 416
 
 
@@ -166,7 +180,7 @@ class_n = 80
 img_list = sorted(glob.glob(os.path.join("/home/wada/YOLOv3/coco128/images/train2017","*")))
 label_list = sorted(glob.glob(os.path.join("/home/wada/YOLOv3/coco128/labels/train2017","*")))
 transform = T.Compose([T.ToTensor()])
-train_data = YOLOv3_Dataset(img_list,label_list,80,img_size , create_anchor.anchor,transform)
+train_data = YOLOv3_Dataset(img_list,label_list,80,img_size ,create_anchor.anchor,transform)
 train_loader = DataLoader(train_data , batch_size = 1)
 
 import matplotlib.pyplot as plt
@@ -181,4 +195,4 @@ for n , (img , scale3_label , scale2_label ,scale1_label) in enumerate(train_loa
   for color,pred in zip(["red","green","blue"],preds):
     bbox_list = visualization(pred,create_anchor.anchor,img_size,conf = 0.9,is_label = True)
     img = draw_bounding_boxes(img, torch.tensor(bbox_list), colors=color, width=1)
-  show(img)
+  #show(img)
