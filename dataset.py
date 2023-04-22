@@ -8,9 +8,9 @@ from torchvision.ops.boxes import box_iou
 import glob
 import os
 import torch
-import torch.nn as nn
+#import torch.nn as nn
 import create_anchor 
-import pandas as pd
+#import pandas as pd
 
 
 
@@ -24,8 +24,10 @@ class YOLOv3_Dataset(Dataset):
     self.class_n = class_n
     self.img_size = img_size
     self.transform = transform
-    #anchor_boxを2次元tensorに落とし込んだもの
+    #anchor_boxを2次元tensorに落とし込んだもの//values 辞書から値のみ出す。
     self.anchor_iou = torch.cat([torch.zeros(9,2) , torch.tensor(self.anchor_dict[["width","height"]].values)] ,dim = 1)
+
+
 
 #coco128からラベルを読み出す
   def get_label(self , path): 
@@ -53,7 +55,7 @@ class YOLOv3_Dataset(Dataset):
   # 中心座標をCx,Cy,tx,tyに変換する関数(YOLOv3の予測tx,ty)
   def cxcy2txty(self,cxcy):
     #全ての出力サイズに対して計算している。特定のサイズのみで十分
-    map_size = [int(self.img_size/32) , int(self.img_size/16) , int(self.img_size/8)] #why(32,16,8)
+    map_size = [int(self.img_size/32) , int(self.img_size/16) , int(self.img_size/8)] ##why(32,16,8)
     txty = []
     for size in map_size:
       #grid_x,grid_y:bboxの中心座標(0~1)*それぞれの出力サイズ=それぞれの出力サイズにおける1ピクセルの幅Cx,Cy
@@ -67,45 +69,64 @@ class YOLOv3_Dataset(Dataset):
       #print(txty)
     return txty
 
-
-
   #ラベルをテンソルに変換する関数
   def label2tensor(self , bbox_list):  
     map_size = [int(self.img_size/32) , int(self.img_size/16) , int(self.img_size/8)]
     tensor_list = []
-
+  #学習時において、学習データ(画像)ごとに異なるスケールに対応する3つの3Dtensorを予測する。
+  #各grid cellに3サイズのbbox、各boxに4つの座標と、検出対象かを表すobjectness scoreと、ラベルの確信が格納される。
     for size in map_size:
       for x in range(3):
-        tensor_list.append(torch.zeros((4 + 1 + self.class_n,size,size)))
+        tensor_list.append(torch.zeros((4 + 1 + self.class_n,size,size))) 
     
     ##yolov4の予測結果をリストに格納
-    for bbox in bbox_list: #
+    for bbox in bbox_list: 
       cls_n = int(bbox[0])
       txty_list = self.cxcy2txty(bbox[1:3]) #bboxの中心座標
       twth_list = self.wh2twth(bbox[3:]) #bboxの幅と高さ
-      
+      #print(bbox[3:])
+
       #バウンディングボックスと最も形状が近いAnchorBoxはIoUを用いて計算する。
-      label_iou = torch.cat([torch.zeros((1,2))  , torch.tensor(bbox[3:]).unsqueeze(0)],dim=1)
+      label_iou = torch.cat([torch.zeros((1,2))  , torch.tensor(bbox[3:]).unsqueeze(0)],dim=1) 
       iou = box_iou(label_iou, self.anchor_iou)[0]
       obj_idx = torch.argmax(iou).item()
+      
+      """
+      #iou計算の結果の確認
+      if bbox == [26.0, 0.174266, 0.664047, 0.0525, 0.119341]:
+        print("bboxのtensor:\n",label_iou)
+        print("anchor_boxのtensor:\n", self.anchor_iou)
+        print("iou:\n",iou)
+        print("iouが最も大きいindex番号:\n",obj_idx)
+      """
 
-      for i , twth in enumerate(twth_list):
-        tensor = tensor_list[i]
-        txty = txty_list[int(i/3)]
-
-        if i == obj_idx:
-          
-          tensor[0,txty[2],txty[0]] = txty[1]
-          tensor[1,txty[2],txty[0]] = txty[3]
-          tensor[2,txty[2],txty[0]] = twth[0]
-          tensor[3,txty[2],txty[0]] = twth[1]
-          tensor[4,txty[2],txty[0]] = 1
-          tensor[5 + cls_n,txty[2],txty[0]] = 1
-    
+      for i , twth in enumerate(twth_list): #iに入るのは0から8まで twthに入るのはyolov4の出力
+        tensor = tensor_list[i] 
+        #print(tensor_list[1].size())
+        txty = txty_list[int(i/3)] ##why box3つずつの中心点は変わらないから
+        """
+        #twthとtxtyの確認
+        if bbox == [26.0, 0.174266, 0.664047, 0.0525, 0.119341]:
+          print("index番号:",i)
+          print("yolov3の予測(幅と高さのずれ):\n",twth)
+          print("yolov3の予測(中心点のx座標とy座標のずれ):\n",txty)
+          print("tensorリスト:\n",tensor.size())
+          print("yolov3の予測(中心点のx座標とy座標のずれ)[1]:\n",txty[1])
+          print("yolov3の予測(中心点のx座標とy座標のずれ)[3]:\n",txty[3])
+        """
+        if i == obj_idx:    
+          tensor[0,txty[2],txty[0]] = txty[1] #tx
+          tensor[1,txty[2],txty[0]] = txty[3] #ty
+          tensor[2,txty[2],txty[0]] = twth[0] #th
+          tensor[3,txty[2],txty[0]] = twth[1] #tw
+          tensor[4,txty[2],txty[0]] = 1 #objectness score
+          tensor[5 + cls_n,txty[2],txty[0]] = 1 #クラス  
 
     scale3_label = torch.cat(tensor_list[0:3] , dim = 0)
     scale2_label = torch.cat(tensor_list[3:6] , dim = 0)
     scale1_label = torch.cat(tensor_list[6:] , dim = 0)
+    #print("scale1_labelの次元数\n",scale1_label.dim())
+    #print("scale1_labelのサイズ\n",scale1_label.size())
 
     return scale3_label , scale2_label , scale1_label  
 
@@ -170,7 +191,7 @@ def show(imgs):
 from torchvision.io import read_image
 from torchvision.utils import draw_bounding_boxes
 import matplotlib.pyplot as plt
-#img_list = glob.glob(os.path.join("/home/wada/YOLOv3/coco128/images/train2017","*"))
+img_list = glob.glob(os.path.join("/home/wada/YOLOv3/coco128/images/train2017","*"))
 img_size = 416
 
 
@@ -195,4 +216,6 @@ for n , (img , scale3_label , scale2_label ,scale1_label) in enumerate(train_loa
   for color,pred in zip(["red","green","blue"],preds):
     bbox_list = visualization(pred,create_anchor.anchor,img_size,conf = 0.9,is_label = True)
     img = draw_bounding_boxes(img, torch.tensor(bbox_list), colors=color, width=1)
-  #show(img)
+  show(img)  
+  #image = read_image(img)
+  #plt.imshow(image)
