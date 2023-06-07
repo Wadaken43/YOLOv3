@@ -8,7 +8,7 @@ from torchvision.ops.boxes import box_iou
 import glob
 import os
 import torch
-import create_anchor 
+from create_anchor import anchor_dict,anchor 
 
 class YOLOv3_Dataset(Dataset):
   
@@ -177,14 +177,14 @@ def show(imgs):
 #from torchvision.io import read_image
 from torchvision.utils import draw_bounding_boxes
 import matplotlib.pyplot as plt
-img_list = glob.glob(os.path.join("/home/wada/YOLOv3/coco128/images/train2017","*"))
 img_size = 416
 
 #print(anchor)
 import torchvision.transforms as T
 class_n = 80
-img_list = sorted(glob.glob(os.path.join("/home/wada/YOLOv3/coco128/images/train2017","*")))
-label_list = sorted(glob.glob(os.path.join("/home/wada/YOLOv3/coco128/labels/train2017","*")))
+img_list = sorted(glob.glob(os.path.join("/home/wada_docker/Documents/YOLOv3/coco128/images/train2017","*")))
+
+label_list = sorted(glob.glob(os.path.join("/home/wada_docker/Documents/YOLOv3/coco128/labels/train2017","*")))
 transform = T.Compose([T.ToTensor()]) #tensorに変更、T.composeは複数のtransformを同時に行うときに使う。
 """
 Datasetにおいて「def __len__()」と「def __getitem__()」は必須。
@@ -192,28 +192,37 @@ Transform(dataの前処理)によるerrorを確認するため。
 transformによるerrorは参照して初めて出力される。
 Transformの処理に不安があるならば必ず事前に参照出力させておくとそこでエラー確認ができる
 """
-train_data = YOLOv3_Dataset(img_list,label_list,80,img_size ,create_anchor.anchor,transform) 
-print(len(train_data))
-print(train_data)
+img_data = ("/home/wada_docker/Documents/YOLOv3/coco128/images/train2017/000000000009.jpg")
+label_data = ("/home/wada_docker/Documents/YOLOv3/coco128/labels/train2017/000000000009.txt")
+train_data = YOLOv3_Dataset(img_list,label_list,80,img_size , anchor,transform) 
+
 #第一引数：Dataset
 train_loader = DataLoader(train_data , batch_size = 1)
 
-##plt.rcParams['figure.max_open_warning'] = 200
+plt.rcParams['figure.max_open_warning'] = 200
 
 for n , (img , scale3_label , scale2_label ,scale1_label) in enumerate(train_loader):
   path = img_list[n]
-  #print(path)
+  print(path)
+ 
   img = cv2.imread(path)[:,:,::-1]
-  #img = cv2.imread("/home/wada/YOLOv3/coco128/images/train2017/000000000650.jpg")
-  #print(img.shape())
   img = cv2.resize(img , (img_size , img_size))
   img = torch.tensor(img.transpose(2,0,1))
+
   preds = [scale3_label , scale2_label , scale1_label]
   #スケールごとに色を変える
   for color,pred in zip(["red","green","blue"],preds):
-    bbox_list = visualization(pred,create_anchor.anchor,img_size,conf = 0.9,is_label = True)
-    img = draw_bounding_boxes(img, torch.tensor(bbox_list), colors=color, width=1)
-  show(img)  
-  #image = read_image(img)
-  #plt.imshow(image)
+    bbox_list = visualization(pred,anchor,img_size,conf = 0.9,is_label = True)
+    bbox_list_tensor = torch.tensor(bbox_list)
+    print(bbox_list)
+    print(bbox_list_tensor.shape)
+
+    if bbox_list_tensor.shape[0] != 0:
+      img = draw_bounding_boxes(img, bbox_list_tensor ,colors=color, width=1)
+  #img = np.asarray(img)
+  #cv2.imshow("img",img)
+  show(img)
+  if n==2:
+    break
+  
 
