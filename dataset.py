@@ -169,8 +169,10 @@ def show(imgs):
     for i, img in enumerate(imgs):
         img = img.detach()
         img = FF.to_pil_image(img) #tensor型からPILイメージに変換
-        axs[0, i].imshow(np.asarray(img))
+        img = np.asarray(img)
+        axs[0, i].imshow(img)
         axs[0, i].set(xticklabels=[], yticklabels=[], xticks=[], yticks=[])
+        cv2.imwrite('anchor_dataset/out_'+str(n+1)+'.jpg',img)
 
 
 #メイン
@@ -203,26 +205,22 @@ plt.rcParams['figure.max_open_warning'] = 200
 
 for n , (img , scale3_label , scale2_label ,scale1_label) in enumerate(train_loader):
   path = img_list[n]
-  print(path)
  
   img = cv2.imread(path)[:,:,::-1]
   img = cv2.resize(img , (img_size , img_size))
   img = torch.tensor(img.transpose(2,0,1))
-
+  
   preds = [scale3_label , scale2_label , scale1_label]
   #スケールごとに色を変える
   for color,pred in zip(["red","green","blue"],preds):
     bbox_list = visualization(pred,anchor,img_size,conf = 0.9,is_label = True)
     bbox_list_tensor = torch.tensor(bbox_list)
-    print(bbox_list)
-    print(bbox_list_tensor.shape)
+    #print(bbox_list)
+    #print(bbox_list_tensor.shape)
 
     if bbox_list_tensor.shape[0] != 0:
       img = draw_bounding_boxes(img, bbox_list_tensor ,colors=color, width=1)
-  #img = np.asarray(img)
-  #cv2.imshow("img",img)
-  show(img)
-  if n==2:
-    break
-  
 
+  show(img)
+  if n==0:
+    break
