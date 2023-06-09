@@ -2,8 +2,9 @@ from tqdm import tqdm
 from model import YOLOv3
 import torch
 import torch.nn as nn
-import create_anchor
 import dataset
+import numpy as np
+import matplotlib.pyplot as plt
 
 #損失関数の定義
 criterion_bce = torch.nn.BCEWithLogitsLoss()
@@ -17,6 +18,11 @@ def bbox_metric(y_pred , y_true,class_n = 80):
     loss_noobj =  torch.sum((-1 * torch.log(1 - torch.sigmoid(y_pred_cut[:,4])+ 1e-10))*(1 - y_true_cut[:,4]))
     return loss_coord , loss_obj , loss_noobj
 
+#loss visualization
+#def loss_visual():
+
+
+
 #学習
 class_n = 80
 model = YOLOv3().to('cuda')
@@ -29,7 +35,7 @@ lambda_noobj = 1
 
 conf = 0.5
 best_loss = 99999
-for epoch in range(300):
+for epoch in range(1): #default 300
   total_train_loss = 0
   total_train_loss_coord = 0
   total_train_loss_obj = 0
@@ -66,3 +72,4 @@ for epoch in range(300):
       model_path = 'model.pth'
       torch.save(model.state_dict(), model_path)
       best_loss = total_train_loss/(n+1)
+    

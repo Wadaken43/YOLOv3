@@ -10,6 +10,7 @@ import os
 import torch
 from create_anchor import anchor_dict,anchor 
 
+
 class YOLOv3_Dataset(Dataset):
   
   def __init__(self,img_list , label_list,class_n,img_size,anchor_dict,transform):
@@ -174,7 +175,6 @@ def show(imgs):
         axs[0, i].set(xticklabels=[], yticklabels=[], xticks=[], yticks=[])
         cv2.imwrite('anchor_dataset/out_'+str(n+1)+'.jpg',img)
 
-
 #メイン
 #from torchvision.io import read_image
 from torchvision.utils import draw_bounding_boxes
@@ -205,7 +205,7 @@ plt.rcParams['figure.max_open_warning'] = 200
 
 for n , (img , scale3_label , scale2_label ,scale1_label) in enumerate(train_loader):
   path = img_list[n]
- 
+  #print(n)
   img = cv2.imread(path)[:,:,::-1]
   img = cv2.resize(img , (img_size , img_size))
   img = torch.tensor(img.transpose(2,0,1))
@@ -217,10 +217,9 @@ for n , (img , scale3_label , scale2_label ,scale1_label) in enumerate(train_loa
     bbox_list_tensor = torch.tensor(bbox_list)
     #print(bbox_list)
     #print(bbox_list_tensor.shape)
-
     if bbox_list_tensor.shape[0] != 0:
       img = draw_bounding_boxes(img, bbox_list_tensor ,colors=color, width=1)
-
-  show(img)
-  if n==0:
+  
+  #show(img)
+  if n==20:
     break
